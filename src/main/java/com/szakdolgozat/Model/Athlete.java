@@ -2,6 +2,8 @@ package com.szakdolgozat.Model;
 
 
 import jakarta.persistence.*;
+import lombok.Getter;
+
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -9,7 +11,9 @@ import java.util.List;
 @Entity
 @Table(name="athlete")
 public class Athlete {
+    @Getter
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     @Column(nullable = false)
     private String name;
@@ -17,7 +21,8 @@ public class Athlete {
     @Enumerated(EnumType.STRING)
     private Gender gender;
 
-    private List<MarkerValue> markerValues = new ArrayList<>();
+    @OneToMany(mappedBy = "athlete", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<BloodTest> bloodTests = new ArrayList<>();
 
     public Athlete(Long id, String name, LocalDate birthDate, Gender gender) {
         this.id = id;
@@ -62,12 +67,12 @@ public class Athlete {
         this.gender = gender;
     }
 
-    public List<MarkerValue> getMarkerValues() {
-        return markerValues;
+    public List<BloodTest> getBloodTests() {
+        return bloodTests;
     }
 
-    public void setMarkerValues(List<MarkerValue> markerValues) {
-        this.markerValues = markerValues;
+    public void setBloodTests(List<BloodTest> bloodTests) {
+        this.bloodTests = bloodTests;
     }
 }
 

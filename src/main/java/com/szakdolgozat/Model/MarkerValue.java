@@ -3,7 +3,7 @@ package com.szakdolgozat.Model;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "MarkerValue")
+@Table(name = "marker_value")
 public class MarkerValue {
 
     @Id
@@ -15,29 +15,34 @@ public class MarkerValue {
     @JoinColumn(name = "blood_test_id", nullable = false)
     private BloodTest bloodTest;
 
-    @Column(nullable = false)
-    private String markerName;
+    @ManyToOne
+    @JoinColumn(name = "marker_id", nullable = false)
+    private Marker marker;
 
     @Column(nullable = false)
-    private Double value;
+    private String value;
 
-    private String unit;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private SampleType sampleType;
 
-    private Double referenceMin;
 
-    private Double referenceMax;
+    public MarkerValue(
+            Long id,
+            BloodTest bloodTest,
+            Marker marker,
+            String value,
+            SampleType sampleType) {
+
+        this.id = id;
+        this.bloodTest = bloodTest;
+        this.marker = marker;
+        this.value = value;
+        this.sampleType = sampleType;
+    }
 
     public MarkerValue() {}
 
-    public MarkerValue(BloodTest bloodTest, String markerName, Double value, String unit,
-                       Double referenceMin, Double referenceMax) {
-        this.bloodTest = bloodTest;
-        this.markerName = markerName;
-        this.value = value;
-        this.unit = unit;
-        this.referenceMin = referenceMin;
-        this.referenceMax = referenceMax;
-    }
 
     public Long getId() {
         return id;
@@ -47,6 +52,7 @@ public class MarkerValue {
         this.id = id;
     }
 
+
     public BloodTest getBloodTest() {
         return bloodTest;
     }
@@ -55,43 +61,30 @@ public class MarkerValue {
         this.bloodTest = bloodTest;
     }
 
-    public String getMarkerName() {
-        return markerName;
+
+    public Marker getMarker() {
+        return marker;
     }
 
-    public void setMarkerName(String markerName) {
-        this.markerName = markerName;
+    public void setMarker(Marker marker) {
+        this.marker = marker;
     }
 
-    public Double getValue() {
+
+    public String getValue() {
         return value;
     }
 
-    public void setValue(Double value) {
+    public void setValue(String value) {
         this.value = value;
     }
 
-    public String getUnit() {
-        return unit;
+
+    public SampleType getSampleType() {
+        return sampleType;
     }
 
-    public void setUnit(String unit) {
-        this.unit = unit;
-    }
-
-    public Double getReferenceMin() {
-        return referenceMin;
-    }
-
-    public void setReferenceMin(Double referenceMin) {
-        this.referenceMin = referenceMin;
-    }
-
-    public Double getReferenceMax() {
-        return referenceMax;
-    }
-
-    public void setReferenceMax(Double referenceMax) {
-        this.referenceMax = referenceMax;
+    public void setSampleType(SampleType sampleType) {
+        this.sampleType = sampleType;
     }
 }

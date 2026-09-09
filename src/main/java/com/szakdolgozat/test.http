@@ -1,0 +1,73 @@
+### Összes sportoló
+GET http://localhost:8080/athletes
+
+### Új sportoló
+POST http://localhost:8080/athletes
+Content-Type: application/json
+
+{
+  "name": "Teszt Sportoló",
+  "birthDate": "2003-05-12",
+  "gender": "MALE"
+}
+
+
+### törlés
+DELETE http://localhost:8080/athletes/1
+Content-Type: application/json
+
+
+### update
+
+PUT http://localhost:8080/athletes/2
+Content-Type: application/json
+
+{
+  "name": "Módosított Sportoló",
+  "birthDate": "2003-05-12",
+  "gender": "MALE"
+}
+
+### Összes vérvizsgálat
+GET http://localhost:8080/bloodtests
+
+
+### BloodTest létrehozása
+POST http://localhost:8080/bloodtests
+Content-Type: application/json
+
+{
+  "athlete": {
+    "id": 3
+  },
+  "date": "2026-09-07",
+  "laboratoryName": "Teszt Labor"
+}
+
+
+### Marker létrehozása
+POST http://localhost:8080/markers
+Content-Type: application/json
+
+{
+  "name": "Hemoglobin",
+  "unit": "g/L"
+}
+
+### MarkerValue létrehozása
+POST http://localhost:8080/markervalues
+Content-Type: application/json
+
+{
+  "bloodTest": {
+    "id": 1
+  },
+  "marker": {
+    "id": 1
+  },
+  "value": 145.0
+}
+
+
+### Összes MarkerValue
+GET http://localhost:8080/markervalues

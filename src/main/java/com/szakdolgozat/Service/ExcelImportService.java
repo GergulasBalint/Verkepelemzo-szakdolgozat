@@ -17,9 +17,9 @@ import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -57,196 +57,225 @@ public class ExcelImportService {
                 markerValueRepository;
     }
 
+    /*
+     * ==========================================
+     * EXCEL IMPORT
+     * ==========================================
+     *
+     * A fájlt most már InputStream-ként kapjuk.
+     *
+     * Ez lehet:
+     * - feltöltött MultipartFile
+     * - később akár más forrásból érkező fájl is
+     */
     @Transactional
-    public void importExcel(String filePath) {
+    public void importExcel(
+            InputStream inputStream)
+            throws IOException {
 
-        try {
+        try (Workbook workbook =
+                     WorkbookFactory.create(inputStream)) {
 
-            ClassPathResource resource =
-                    new ClassPathResource(filePath);
+            System.out.println();
+            System.out.println("================================");
+            System.out.println("EXCEL IMPORT INDÍTÁSA");
+            System.out.println("================================");
 
-            try (var inputStream = resource.getInputStream();
-                 Workbook workbook =
-                         WorkbookFactory.create(inputStream)) {
+            System.out.println(
+                    "Sheetek száma: "
+                            + workbook.getNumberOfSheets()
+            );
+
+            int totalMeasurements = 0;
+            int savedMeasurements = 0;
+
+            /*
+             * Végigmegyünk az összes munkalapon.
+             */
+            for (int sheetIndex = 0;
+                 sheetIndex < workbook.getNumberOfSheets();
+                 sheetIndex++) {
+
+                Sheet sheet =
+                        workbook.getSheetAt(sheetIndex);
+
+                String sheetName =
+                        sheet.getSheetName();
 
                 System.out.println();
-                System.out.println("================================");
-                System.out.println("EXCEL IMPORT INDÍTÁSA");
-                System.out.println("================================");
-
                 System.out.println(
-                        "Sheetek száma: " +
-                                workbook.getNumberOfSheets()
+                        "--- SHEET: "
+                                + sheetName
+                                + " ---"
                 );
 
-                int totalMeasurements = 0;
-                int savedMeasurements = 0;
+                /*
+                 * A sheet neve alapján
+                 * létrehozzuk vagy megkeressük
+                 * a sportolót.
+                 */
+                Athlete athlete =
+                        getOrCreateAthlete(sheetName);
 
-                for (int sheetIndex = 0;
-                     sheetIndex < workbook.getNumberOfSheets();
-                     sheetIndex++) {
+                /*
+                 * Beolvassuk a mérési adatokat.
+                 */
+                List<ExcelMeasurement> measurements =
+                        readMeasurements(sheet);
 
-                    Sheet sheet =
-                            workbook.getSheetAt(sheetIndex);
+                totalMeasurements +=
+                        measurements.size();
 
-                    String sheetName =
-                            sheet.getSheetName();
-
-                    System.out.println();
-                    System.out.println(
-                            "--- SHEET: " +
-                                    sheetName +
-                                    " ---"
-                    );
-
-                    /*
-                     * 1. Sportoló létrehozása / megkeresése
-                     */
-                    Athlete athlete =
-                            getOrCreateAthlete(sheetName);
-
-                    System.out.println(
-                            "Athlete: " +
-                                    athlete.getName()
-                    );
+                /*
+                 * Minden mérési adatot elmentünk.
+                 */
+                for (ExcelMeasurement measurement :
+                        measurements) {
 
                     /*
-                     * 2. Excel adatok beolvasása
+                     * Megkeressük vagy létrehozzuk
+                     * az adott dátumhoz tartozó
+                     * BloodTest rekordot.
                      */
-                    List<ExcelMeasurement> measurements =
-                            readMeasurements(sheet);
-
-                    totalMeasurements +=
-                            measurements.size();
+                    BloodTest bloodTest =
+                            getOrCreateBloodTest(
+                                    athlete,
+                                    measurement.getDate()
+                            );
 
                     /*
-                     * 3. Mérések mentése
+                     * A marker nevét normalizáljuk.
+                     *
+                     * Például:
+                     * Hemoglobin
+                     * Haemoglobin
+                     *
+                     * ugyanahhoz a markerhez
+                     * tartozhat.
                      */
-                    for (ExcelMeasurement measurement :
-                            measurements) {
+                    String normalizedMarkerName =
+                            markerNormalizationService
+                                    .normalize(
+                                            measurement
+                                                    .getMarkerName()
+                                    );
 
-                        /*
-                         * Vérvizsgálat megkeresése vagy létrehozása
-                         */
-                        BloodTest bloodTest =
-                                getOrCreateBloodTest(
-                                        athlete,
-                                        measurement.getDate()
-                                );
-
-                        /*
-                         * Marker normalizálása
-                         */
-                        String normalizedMarkerName =
-                                markerNormalizationService.normalize(
-                                        measurement.getMarkerName()
-                                );
-
-                        /*
-                         * Marker megkeresése vagy létrehozása
-                         */
-                        Marker marker =
-                                getOrCreateMarker(
-                                        normalizedMarkerName
-                                );
-
-                        /*
-                         * MarkerValue megkeresése vagy létrehozása
-                         *
-                         * Jelenleg még csak BloodTest + Marker alapján
-                         * keresünk. Ezt a következő lépésben módosítjuk
-                         * BloodTest + Marker + SampleType alapú keresésre.
-                         */
-                        MarkerValue markerValue =
-                                markerValueRepository
-                                        .findByBloodTestAndMarkerAndSampleType(
-                                                bloodTest,
-                                                marker,
-                                                measurement.getSampleType()
-                                        )
-                                        .orElse(null);
-
-                        if (markerValue == null) {
-
-                            markerValue =
-                                    new MarkerValue();
-
-                            markerValue.setBloodTest(
-                                    bloodTest
+                    /*
+                     * Megkeressük vagy létrehozzuk
+                     * a markert.
+                     */
+                    Marker marker =
+                            getOrCreateMarker(
+                                    normalizedMarkerName
                             );
 
-                            markerValue.setMarker(
-                                    marker
-                            );
+                    /*
+                     * FONTOS:
+                     *
+                     * A BloodTest + Marker + SampleType
+                     * együtt azonosítja a mérési rekordot.
+                     *
+                     * Ez lehetővé teszi például:
+                     *
+                     * Glucose + BLOOD
+                     *
+                     * és
+                     *
+                     * Glucose + URINE
+                     *
+                     * egyidejű tárolását.
+                     */
+                    MarkerValue markerValue =
+                            markerValueRepository
+                                    .findByBloodTestAndMarkerAndSampleType(
+                                            bloodTest,
+                                            marker,
+                                            measurement
+                                                    .getSampleType()
+                                    )
+                                    .orElse(null);
 
-                            markerValue.setValue(
-                                    measurement.getValue()
-                            );
+                    /*
+                     * Ha még nincs ilyen rekord,
+                     * létrehozzuk.
+                     */
+                    if (markerValue == null) {
 
-                            markerValue.setSampleType(
-                                    measurement.getSampleType()
-                            );
+                        markerValue =
+                                new MarkerValue();
 
-                            markerValueRepository.save(
-                                    markerValue
-                            );
+                        markerValue.setBloodTest(
+                                bloodTest
+                        );
 
-                            savedMeasurements++;
-                        }
+                        markerValue.setMarker(
+                                marker
+                        );
+
+                        markerValue.setValue(
+                                measurement.getValue()
+                        );
+
+                        markerValue.setSampleType(
+                                measurement.getSampleType()
+                        );
+
+                        markerValueRepository.save(
+                                markerValue
+                        );
+
+                        savedMeasurements++;
                     }
-
-                    System.out.println(
-                            "Beolvasott mérések: " +
-                                    measurements.size()
-                    );
                 }
 
-                System.out.println();
-                System.out.println("================================");
-                System.out.println("EXCEL IMPORT KÉSZ");
-                System.out.println("================================");
-
                 System.out.println(
-                        "Összes beolvasott mérés: " +
-                                totalMeasurements
-                );
-
-                System.out.println(
-                        "Újonnan mentett mérés: " +
-                                savedMeasurements
-                );
-
-                System.out.println(
-                        "Athlete-ek száma: " +
-                                athleteRepository.count()
-                );
-
-                System.out.println(
-                        "BloodTest-ek száma: " +
-                                bloodTestRepository.count()
-                );
-
-                System.out.println(
-                        "Markerek száma: " +
-                                markerRepository.count()
-                );
-
-                System.out.println(
-                        "MarkerValue-k száma: " +
-                                markerValueRepository.count()
+                        "Beolvasott mérések: "
+                                + measurements.size()
                 );
             }
 
-        } catch (IOException e) {
+            System.out.println();
+            System.out.println("================================");
+            System.out.println("EXCEL IMPORT KÉSZ");
+            System.out.println("================================");
 
             System.out.println(
-                    "Hiba az Excel importálása közben:"
+                    "Összes beolvasott mérés: "
+                            + totalMeasurements
             );
 
-            e.printStackTrace();
+            System.out.println(
+                    "Újonnan mentett mérés: "
+                            + savedMeasurements
+            );
+
+            System.out.println(
+                    "Athlete-ek száma: "
+                            + athleteRepository.count()
+            );
+
+            System.out.println(
+                    "BloodTest-ek száma: "
+                            + bloodTestRepository.count()
+            );
+
+            System.out.println(
+                    "Markerek száma: "
+                            + markerRepository.count()
+            );
+
+            System.out.println(
+                    "MarkerValue-k száma: "
+                            + markerValueRepository.count()
+            );
         }
     }
 
+    /*
+     * ==========================================
+     * ATHLETE
+     * ==========================================
+     */
 
     private Athlete getOrCreateAthlete(
             String sheetName) {
@@ -261,21 +290,16 @@ public class ExcelImportService {
                     athlete.setName(sheetName);
 
                     /*
-                     * A sheet neve például:
+                     * Például:
                      *
                      * 2003_Male_Road
                      *
-                     * vagy:
-                     *
-                     * 2006_Female_Road
+                     * első rész:
+                     * 2003
                      */
-
                     String[] parts =
                             sheetName.split("_");
 
-                    /*
-                     * Születési év
-                     */
                     if (parts.length > 0) {
 
                         try {
@@ -285,6 +309,13 @@ public class ExcelImportService {
                                             parts[0]
                                     );
 
+                            /*
+                             * Az Excelből csak a
+                             * születési év ismert.
+                             *
+                             * Ezért ideiglenesen
+                             * január 1-et használunk.
+                             */
                             athlete.setBirthDate(
                                     LocalDate.of(
                                             birthYear,
@@ -294,22 +325,25 @@ public class ExcelImportService {
                             );
 
                         } catch (Exception ignored) {
-                            // Ha nincs értelmezhető év.
                         }
                     }
 
                     /*
-                     * Nem
+                     * Nem alapján
+                     * beállítjuk a Gender enumot.
                      */
-                    if (sheetName.toLowerCase()
-                            .contains("male")) {
+                    String lowerSheetName =
+                            sheetName.toLowerCase();
+
+                    if (lowerSheetName.contains("male")) {
 
                         athlete.setGender(
                                 Gender.MALE
                         );
 
-                    } else if (sheetName.toLowerCase()
-                            .contains("female")) {
+                    } else if (
+                            lowerSheetName.contains("female")
+                    ) {
 
                         athlete.setGender(
                                 Gender.FEMALE
@@ -322,6 +356,11 @@ public class ExcelImportService {
                 });
     }
 
+    /*
+     * ==========================================
+     * BLOOD TEST
+     * ==========================================
+     */
 
     private BloodTest getOrCreateBloodTest(
             Athlete athlete,
@@ -351,6 +390,11 @@ public class ExcelImportService {
                 });
     }
 
+    /*
+     * ==========================================
+     * MARKER
+     * ==========================================
+     */
 
     private Marker getOrCreateMarker(
             String markerName) {
@@ -367,8 +411,8 @@ public class ExcelImportService {
                     );
 
                     /*
-                     * Az Excel jelenlegi importja
-                     * még nem kezeli külön a mértékegységet.
+                     * Az egységeket később
+                     * fogjuk kezelni.
                      */
                     marker.setUnit(null);
 
@@ -378,6 +422,11 @@ public class ExcelImportService {
                 });
     }
 
+    /*
+     * ==========================================
+     * EXCEL BEOLVASÁS
+     * ==========================================
+     */
 
     private List<ExcelMeasurement> readMeasurements(
             Sheet sheet) {
@@ -392,6 +441,12 @@ public class ExcelImportService {
             return measurements;
         }
 
+        /*
+         * Az első oszlopban vannak
+         * a markernevek.
+         *
+         * A további oszlopok dátumok.
+         */
         for (int columnIndex = 1;
              columnIndex < headerRow.getLastCellNum();
              columnIndex++) {
@@ -399,6 +454,10 @@ public class ExcelImportService {
             var dateCell =
                     headerRow.getCell(columnIndex);
 
+            /*
+             * Ha nincs dátum,
+             * nincs mit feldolgozni.
+             */
             if (dateCell == null ||
                     dateCell.toString().isBlank()) {
 
@@ -410,6 +469,16 @@ public class ExcelImportService {
                             dateCell.toString()
                     );
 
+            /*
+             * Minden dátumoszlop
+             * alapból vérvizsgálattal indul.
+             */
+            SampleType currentSampleType =
+                    SampleType.BLOOD;
+
+            /*
+             * Végigmegyünk az összes soron.
+             */
             for (int rowIndex = 1;
                  rowIndex <= sheet.getLastRowNum();
                  rowIndex++) {
@@ -424,40 +493,81 @@ public class ExcelImportService {
                 var markerCell =
                         row.getCell(0);
 
-                var valueCell =
-                        row.getCell(columnIndex);
-
                 if (markerCell == null ||
                         markerCell.toString().isBlank()) {
 
                     continue;
                 }
 
-                if (valueCell == null ||
-                        valueCell.toString().isBlank()) {
+                String markerName =
+                        markerCell
+                                .toString()
+                                .trim();
+
+                var valueCell =
+                        row.getCell(columnIndex);
+
+                boolean hasValue =
+                        valueCell != null &&
+                                !valueCell
+                                        .toString()
+                                        .isBlank();
+
+                /*
+                 * Megnézzük, hogy a sor
+                 * szekciófejléc-e.
+                 */
+                SampleType sectionType =
+                        detectSection(markerName);
+
+                /*
+                 * Szekciófejléc esetén
+                 * megváltoztatjuk az aktuális
+                 * mintatípust.
+                 */
+                if (!hasValue &&
+                        sectionType != null) {
+
+                    currentSampleType =
+                            sectionType;
 
                     continue;
                 }
 
-                String markerName =
-                        markerCell.toString().trim();
+                /*
+                 * Üres mérési cellát
+                 * nem mentünk.
+                 */
+                if (!hasValue) {
+                    continue;
+                }
 
                 String value =
-                        valueCell.toString().trim();
+                        valueCell
+                                .toString()
+                                .trim();
 
                 /*
-                 * Meghatározzuk, hogy milyen típusú
-                 * mintából származik az adat.
+                 * A marker neve, az értéke és
+                 * az aktuális szekció alapján
+                 * meghatározzuk a mintatípust.
                  */
-                SampleType sampleType =
-                        detectSampleType(markerName);
+                SampleType detectedType =
+                        detectSampleType(
+                                markerName,
+                                value,
+                                currentSampleType
+                        );
+
+                currentSampleType =
+                        detectedType;
 
                 measurements.add(
                         new ExcelMeasurement(
                                 date,
                                 markerName,
                                 value,
-                                sampleType
+                                detectedType
                         )
                 );
             }
@@ -466,33 +576,338 @@ public class ExcelImportService {
         return measurements;
     }
 
+    /*
+     * ==========================================
+     * SZEKCIÓ FELISMERÉS
+     * ==========================================
+     */
 
-    private SampleType detectSampleType(
+    private SampleType detectSection(
             String markerName) {
 
         String marker =
-                markerName.trim().toLowerCase();
+                markerName
+                        .trim()
+                        .toLowerCase();
 
-        if (marker.equals("urine")) {
+        /*
+         * VIZELET
+         */
+        if (marker.equals("urine") ||
+                marker.equals("vizelet")) {
 
             return SampleType.URINE;
         }
 
-        if (marker.equals("urine sediment")) {
+        /*
+         * VIZELET ÜLEDÉK
+         */
+        if (marker.equals("urine sediment") ||
+                marker.equals("urine sedimentation") ||
+                marker.equals("vizelet üledék")) {
 
             return SampleType.URINE_SEDIMENT;
         }
 
         /*
-         * Egyelőre minden más értéket
-         * vérvizsgálatnak tekintünk.
-         *
-         * A következő lépésben ezt fogjuk
-         * szekcióalapú felismerésre módosítani.
+         * VÉRVIZSGÁLATI / LABOR SZEKCIÓK
+         */
+        if (marker.equals("chemistry") ||
+                marker.equals("clinical chemistry") ||
+                marker.equals("haematology") ||
+                marker.equals("hematology") ||
+                marker.equals("biochemistry") ||
+                marker.equals("immunology") ||
+                marker.equals("endocrinology") ||
+                marker.equals("hormone") ||
+                marker.equals("ionok") ||
+                marker.equals("gfr")) {
+
+            return SampleType.BLOOD;
+        }
+
+        return null;
+    }
+
+    /*
+     * ==========================================
+     * MINTATÍPUS FELISMERÉS
+     * ==========================================
+     */
+
+    private SampleType detectSampleType(
+            String markerName,
+            String value,
+            SampleType currentSampleType) {
+
+        String marker =
+                markerName
+                        .trim()
+                        .toLowerCase();
+
+        /*
+         * Ha üledékben vagyunk,
+         * a vérsejtek is lehetnek
+         * vizeletüledék markerek.
+         */
+        if (currentSampleType ==
+                SampleType.URINE_SEDIMENT) {
+
+            if (marker.equals(
+                    "red blood cells") ||
+                    marker.equals(
+                            "white blood cells") ||
+                    marker.equals("rbc") ||
+                    marker.equals("wbc")) {
+
+                return SampleType.URINE_SEDIMENT;
+            }
+
+            if (isUrineSedimentMarker(marker)) {
+
+                return SampleType.URINE_SEDIMENT;
+            }
+
+            if (isStrongUrineMarker(marker)) {
+
+                return SampleType.URINE;
+            }
+
+            if (isBloodMarker(marker)) {
+
+                return SampleType.BLOOD;
+            }
+
+            return currentSampleType;
+        }
+
+        /*
+         * Egyértelmű vizeletmarkerek.
+         */
+        if (isStrongUrineMarker(marker)) {
+
+            return SampleType.URINE;
+        }
+
+        /*
+         * Ha jelenleg vizeletben vagyunk.
+         */
+        if (currentSampleType ==
+                SampleType.URINE) {
+
+            /*
+             * Vizeletben is előforduló
+             * kémiai markerek.
+             */
+            if (isPossibleUrineChemistryMarker(
+                    marker)) {
+
+                return SampleType.URINE;
+            }
+
+            /*
+             * Egyértelmű vérmarker esetén
+             * visszatérünk BLOOD-ra.
+             */
+            if (isBloodMarker(marker)) {
+
+                return SampleType.BLOOD;
+            }
+
+            return currentSampleType;
+        }
+
+        /*
+         * Ha vérvizsgálati részben vagyunk,
+         * egyértelmű vérmarker = BLOOD.
+         */
+        if (isBloodMarker(marker)) {
+
+            return SampleType.BLOOD;
+        }
+
+        /*
+         * Üledék marker.
+         */
+        if (isUrineSedimentMarker(marker)) {
+
+            return SampleType.URINE_SEDIMENT;
+        }
+
+        /*
+         * Alapértelmezés.
          */
         return SampleType.BLOOD;
     }
 
+    /*
+     * ==========================================
+     * ERŐS VIZELET MARKEREK
+     * ==========================================
+     */
+
+    private boolean isStrongUrineMarker(
+            String marker) {
+
+        return marker.equals("acetone") ||
+                marker.equals("nitrite") ||
+                marker.equals("specific gravity") ||
+                marker.equals(
+                        "specific gravity (sg)"
+                ) ||
+                marker.equals("urine color") ||
+                marker.equals("urine turbidity") ||
+                marker.equals(
+                        "urine appearance"
+                ) ||
+                marker.equals("urine ph") ||
+                marker.equals("urine protein") ||
+                marker.equals("urine blood") ||
+                marker.equals("urine glucose") ||
+                marker.equals("urine sugar") ||
+                marker.equals("urine acetone") ||
+                marker.equals("urine bilirubin") ||
+                marker.equals(
+                        "urine urobilinogen"
+                ) ||
+                marker.equals("urobilinogen") ||
+                marker.equals("leukocytes") ||
+                marker.equals("leucocytes") ||
+                marker.equals("leukocyta") ||
+                marker.equals("sugar");
+    }
+
+    /*
+     * ==========================================
+     * VIZELETBEN IS ELŐFORDULÓ KÉMIAI MARKEREK
+     * ==========================================
+     */
+
+    private boolean isPossibleUrineChemistryMarker(
+            String marker) {
+
+        return marker.equals("albumin") ||
+                marker.equals("bilirubin") ||
+                marker.equals("bilirubin #") ||
+                marker.equals("blood") ||
+                marker.equals("cholesterol") ||
+                marker.equals("creatinine") ||
+                marker.equals("gamma gt") ||
+                marker.equals("glucose") ||
+                marker.equals("got") ||
+                marker.equals("gpt") ||
+                marker.equals("hdl cholesterol") ||
+                marker.equals("iron") ||
+                marker.equals("potassium") ||
+                marker.equals("protein") ||
+                marker.equals(
+                        "prothrombin inr"
+                ) ||
+                marker.equals("sodium") ||
+                marker.equals(
+                        "total bilirubin"
+                ) ||
+                marker.equals("total protein") ||
+                marker.equals("triglycerides") ||
+                marker.equals("amylase") ||
+                marker.equals(
+                        "alkaline phosphatase"
+                ) ||
+                marker.equals(
+                        "aspartate aminotransferase"
+                ) ||
+                marker.equals(
+                        "alanine aminotransferase"
+                );
+    }
+
+    /*
+     * ==========================================
+     * VIZELET ÜLEDÉK MARKEREK
+     * ==========================================
+     */
+
+    private boolean isUrineSedimentMarker(
+            String marker) {
+
+        return marker.equals(
+                "abnormal cylinders"
+        ) ||
+                marker.equals("bacteria") ||
+                marker.equals("yeast") ||
+                marker.equals("mucus") ||
+                marker.equals("crystals") ||
+                marker.equals("casts") ||
+                marker.equals(
+                        "epithelial cells"
+                ) ||
+                marker.equals(
+                        "squamous epithelial cells"
+                ) ||
+                marker.equals(
+                        "renal epithelial cells"
+                ) ||
+                marker.equals(
+                        "transitional epithelial cells"
+                ) ||
+                marker.equals("ash");
+    }
+
+    /*
+     * ==========================================
+     * VÉR MARKEREK
+     * ==========================================
+     */
+
+    private boolean isBloodMarker(
+            String marker) {
+
+        return marker.equals(
+                "white blood cells"
+        ) ||
+                marker.equals(
+                        "white blood cell count"
+                ) ||
+                marker.equals(
+                        "red blood cells"
+                ) ||
+                marker.equals(
+                        "red blood cell count"
+                ) ||
+                marker.equals("hemoglobin") ||
+                marker.equals("haemoglobin") ||
+                marker.equals("hematocrit") ||
+                marker.equals("haematocrit") ||
+                marker.equals("mcv") ||
+                marker.equals("mch") ||
+                marker.equals("mchc") ||
+                marker.equals("rdw") ||
+                marker.equals("platelets") ||
+                marker.equals("thrombocytes") ||
+                marker.equals("neutrophils") ||
+                marker.equals("neutrophils #") ||
+                marker.equals("neutrophils %") ||
+                marker.equals("lymphocytes") ||
+                marker.equals("lymphocytes #") ||
+                marker.equals("lymphocytes %") ||
+                marker.equals("monocytes") ||
+                marker.equals("monocytes #") ||
+                marker.equals("eosinophils") ||
+                marker.equals("eosinophils #") ||
+                marker.equals("basophils") ||
+                marker.equals("basophils #") ||
+                marker.equals("ferritin") ||
+                marker.equals("ck") ||
+                marker.equals("crp") ||
+                marker.equals("tsh") ||
+                marker.equals("vitamin d");
+    }
+
+    /*
+     * ==========================================
+     * DÁTUM FELISMERÉS
+     * ==========================================
+     */
 
     private LocalDate parseDate(
             String dateText) {
@@ -500,6 +915,13 @@ public class ExcelImportService {
         dateText =
                 dateText.trim();
 
+        /*
+         * Például:
+         *
+         * 2023.09.08 (NED)
+         *
+         * -> 2023.09.08
+         */
         int parenthesisIndex =
                 dateText.indexOf("(");
 
@@ -512,13 +934,31 @@ public class ExcelImportService {
                     ).trim();
         }
 
+        /*
+         * Például:
+         *
+         * 2023.12.15-18
+         *
+         * -> 2023.12.15
+         */
         if (dateText.matches(
-                "\\d{4}\\.\\d{2}\\.\\d{2}-\\d{2}")) {
+                "\\d{4}\\.\\d{2}\\.\\d{2}-\\d{2}"
+        )) {
 
             dateText =
-                    dateText.substring(0, 10);
+                    dateText.substring(
+                            0,
+                            10
+                    );
         }
 
+        /*
+         * Például:
+         *
+         * 2021.04.27.
+         *
+         * -> 2021.04.27
+         */
         if (dateText.endsWith(".")) {
 
             dateText =
@@ -530,19 +970,15 @@ public class ExcelImportService {
 
         List<DateTimeFormatter> formatters =
                 List.of(
-
                         DateTimeFormatter.ofPattern(
                                 "yyyy.MM.dd"
                         ),
-
                         DateTimeFormatter.ofPattern(
                                 "dd.MM.yyyy"
                         ),
-
                         DateTimeFormatter.ofPattern(
                                 "M/d/yy"
                         ),
-
                         DateTimeFormatter.ofPattern(
                                 "yyyy-MM-dd"
                         )
@@ -559,13 +995,12 @@ public class ExcelImportService {
                 );
 
             } catch (Exception ignored) {
-                // Következő formátum.
             }
         }
 
         throw new IllegalArgumentException(
-                "Ismeretlen dátumformátum: " +
-                        dateText
+                "Ismeretlen dátumformátum: "
+                        + dateText
         );
     }
 }

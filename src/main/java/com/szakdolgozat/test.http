@@ -71,3 +71,14 @@ Content-Type: application/json
 
 ### Összes MarkerValue
 GET http://localhost:8080/markervalues
+
+### Test import
+POST http://localhost:8080/import/excel
+Content-Type: multipart/form-data; boundary=WebAppBoundary
+
+--WebAppBoundary
+Content-Disposition: form-data; name="file"; filename="Thesis_project.xlsx"
+Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+
+< C:\Users\gergu\IdeaProjects\szakdolgozat\src\main\resources\Thesis_project.xlsx
+--WebAppBoundary--

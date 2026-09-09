@@ -11,7 +11,8 @@ import java.util.Optional;
 public interface MarkerValueRepository
         extends JpaRepository<MarkerValue, Long> {
 
-    Optional<MarkerValue> findByBloodTestAndMarkerAndSampleType(
+    Optional<MarkerValue>
+    findByBloodTestAndMarkerAndSampleType(
             BloodTest bloodTest,
             Marker marker,
             SampleType sampleType

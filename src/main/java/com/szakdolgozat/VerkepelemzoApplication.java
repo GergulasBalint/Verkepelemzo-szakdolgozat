@@ -16,15 +16,5 @@ public class VerkepelemzoApplication {
         );
     }
 
-    @Bean
-    CommandLineRunner importExcel(
-            ExcelImportService excelImportService) {
 
-        return args -> {
-
-            excelImportService.importExcel(
-                    "Thesis_project.xlsx"
-            );
-        };
-    }
 }

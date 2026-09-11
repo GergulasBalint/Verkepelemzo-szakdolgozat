@@ -103,7 +103,9 @@ GET http://localhost:8080/analysis/athlete/35/data-quality
 GET http://localhost:8080/analysis/athlete/35/ml-data
 
 ### anomaly test
-GET http://localhost:8080/analysis/athlete/36/anomalies
+GET http://localhost:8080/analysis/athlete/37/anomalies
 
 ### hibás sportoló test
 GET http://localhost:8080/analysis/athlete/99999/anomalies
+### marker test
+GET http://localhost:8080/analysis/athlete/35/markers

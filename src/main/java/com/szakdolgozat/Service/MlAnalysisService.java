@@ -20,14 +20,23 @@ public class MlAnalysisService {
     private final ObjectMapper objectMapper =
             new ObjectMapper();
 
+    // --------------------------------------------------
+    // Python beállítások
+    // --------------------------------------------------
+
     private static final String PYTHON_PATH =
             "C:\\Users\\gergu\\IdeaProjects\\szakdolgozat\\python-analysis\\.venv\\Scripts\\python.exe";
 
     private static final String SCRIPT_PATH =
             "C:\\Users\\gergu\\IdeaProjects\\szakdolgozat\\python-analysis\\anomaly_detection.py";
 
-    private static final String RESULT_PATH =
-            "C:\\Users\\gergu\\IdeaProjects\\szakdolgozat\\python-analysis\\anomaly_results.json";
+    private static final String RESULT_DIRECTORY =
+            "C:\\Users\\gergu\\IdeaProjects\\szakdolgozat\\python-analysis";
+
+
+    // --------------------------------------------------
+    // Konstruktor
+    // --------------------------------------------------
 
     public MlAnalysisService(
             AthleteRepository athleteRepository) {
@@ -36,7 +45,19 @@ public class MlAnalysisService {
                 athleteRepository;
     }
 
-    public MlAnomalyResponse analyzeAthlete(
+
+    // --------------------------------------------------
+    // ML elemzés
+    // --------------------------------------------------
+    //
+    // synchronized:
+    // egyszerre csak egy Python ML folyamat futhat.
+    // Ez megakadályozza, hogy két párhuzamos kérés
+    // ugyanazt az eredményfájlt írja/olvassa.
+    //
+    // --------------------------------------------------
+
+    public synchronized MlAnomalyResponse analyzeAthlete(
             Long athleteId) {
 
         // ---------------------------------------------
@@ -52,8 +73,9 @@ public class MlAnalysisService {
                                 )
                         );
 
+
         // ---------------------------------------------
-        // Python és script ellenőrzése
+        // Python és script útvonalak
         // ---------------------------------------------
 
         Path pythonPath =
@@ -62,8 +84,26 @@ public class MlAnalysisService {
         Path scriptPath =
                 Path.of(SCRIPT_PATH);
 
+
+        // ---------------------------------------------
+        // Sportolónként külön eredményfájl
+        // ---------------------------------------------
+
+        String resultFileName =
+                "anomaly_results_"
+                        + athleteId
+                        + ".json";
+
         Path resultPath =
-                Path.of(RESULT_PATH);
+                Path.of(
+                        RESULT_DIRECTORY,
+                        resultFileName
+                );
+
+
+        // ---------------------------------------------
+        // Python interpreter ellenőrzése
+        // ---------------------------------------------
 
         if (!Files.exists(pythonPath)) {
 
@@ -73,6 +113,11 @@ public class MlAnalysisService {
             );
         }
 
+
+        // ---------------------------------------------
+        // Python script ellenőrzése
+        // ---------------------------------------------
+
         if (!Files.exists(scriptPath)) {
 
             throw new MlAnalysisException(
@@ -81,13 +126,17 @@ public class MlAnalysisService {
             );
         }
 
+
         try {
 
             // -----------------------------------------
             // Korábbi eredmény törlése
             // -----------------------------------------
 
-            Files.deleteIfExists(resultPath);
+            Files.deleteIfExists(
+                    resultPath
+            );
+
 
             // -----------------------------------------
             // Python folyamat indítása
@@ -100,10 +149,16 @@ public class MlAnalysisService {
                             athlete.getId().toString()
                     );
 
+            processBuilder.directory(
+                    Path.of(RESULT_DIRECTORY).toFile()
+            );
+
             processBuilder.redirectErrorStream(true);
+
 
             Process process =
                     processBuilder.start();
+
 
             // -----------------------------------------
             // Maximum 30 másodpercet várunk
@@ -115,15 +170,22 @@ public class MlAnalysisService {
                             TimeUnit.SECONDS
                     );
 
+
+            // -----------------------------------------
+            // Timeout
+            // -----------------------------------------
+
             if (!finished) {
 
                 process.destroyForcibly();
 
                 throw new MlAnalysisException(
-                        "A Python ML elemzés túl sokáig futott "
-                                + "(30 másodperc után leállítva)."
+                        "A Python ML elemzés túl sokáig "
+                                + "futott (30 másodperc után "
+                                + "leállítva)."
                 );
             }
+
 
             // -----------------------------------------
             // Python kimenetének kiolvasása
@@ -136,8 +198,10 @@ public class MlAnalysisService {
                             StandardCharsets.UTF_8
                     );
 
+
             int exitCode =
                     process.exitValue();
+
 
             // -----------------------------------------
             // Python hibával állt le
@@ -146,10 +210,12 @@ public class MlAnalysisService {
             if (exitCode != 0) {
 
                 throw new MlAnalysisException(
-                        "A Python ML elemzés hibával állt le.\n"
+                        "A Python ML elemzés hibával "
+                                + "állt le.\n"
                                 + output
                 );
             }
+
 
             // -----------------------------------------
             // Eredményfájl ellenőrzése
@@ -159,9 +225,12 @@ public class MlAnalysisService {
 
                 throw new MlAnalysisException(
                         "A Python elemzés sikeresen lefutott, "
-                                + "de nem jött létre az eredményfájl."
+                                + "de nem jött létre az "
+                                + "eredményfájl: "
+                                + resultPath
                 );
             }
+
 
             // -----------------------------------------
             // JSON beolvasása
@@ -173,12 +242,18 @@ public class MlAnalysisService {
                             StandardCharsets.UTF_8
                     );
 
+
+            // -----------------------------------------
+            // Üres JSON ellenőrzése
+            // -----------------------------------------
+
             if (json.isBlank()) {
 
                 throw new MlAnalysisException(
                         "A Python eredményfájl üres."
                 );
             }
+
 
             // -----------------------------------------
             // JSON → Java DTO
@@ -189,9 +264,11 @@ public class MlAnalysisService {
                     MlAnomalyResponse.class
             );
 
+
         } catch (MlAnalysisException e) {
 
             throw e;
+
 
         } catch (IOException e) {
 
@@ -200,6 +277,7 @@ public class MlAnalysisService {
                             + "végrehajtása közben.",
                     e
             );
+
 
         } catch (InterruptedException e) {
 
@@ -210,10 +288,12 @@ public class MlAnalysisService {
                     e
             );
 
+
         } catch (Exception e) {
 
             throw new MlAnalysisException(
-                    "Ismeretlen hiba történt az ML elemzés során.",
+                    "Ismeretlen hiba történt az ML "
+                            + "elemzés során.",
                     e
             );
         }

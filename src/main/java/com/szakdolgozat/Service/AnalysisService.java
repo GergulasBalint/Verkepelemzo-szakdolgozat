@@ -726,4 +726,33 @@ public class AnalysisService {
 
         return result;
     }
+
+    public List<Marker> getMarkersForAthlete(Long athleteId) {
+
+        Athlete athlete =
+                athleteRepository.findById(athleteId)
+                        .orElseThrow(() ->
+                                new RuntimeException(
+                                        "A sportoló nem található: "
+                                                + athleteId
+                                )
+                        );
+
+        List<MarkerValue> markerValues =
+                markerValueRepository.findByBloodTest_AthleteAndSampleType(
+                        athlete,
+                        SampleType.BLOOD
+                );
+
+        return markerValues.stream()
+                .map(MarkerValue::getMarker)
+                .distinct()
+                .sorted(
+                        Comparator.comparing(
+                                Marker::getName,
+                                String.CASE_INSENSITIVE_ORDER
+                        )
+                )
+                .toList();
+    }
 }

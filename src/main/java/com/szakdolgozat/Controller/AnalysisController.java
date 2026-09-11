@@ -1,5 +1,6 @@
 package com.szakdolgozat.Controller;
 
+import com.szakdolgozat.Model.Marker;
 import com.szakdolgozat.Model.SampleType;
 import com.szakdolgozat.Service.AnalysisService;
 import com.szakdolgozat.dto.*;
@@ -105,6 +106,17 @@ public class AnalysisController {
 
         return ResponseEntity.ok(
                 analysisService.getMlMeasurements(
+                        athleteId
+                )
+        );
+    }
+
+    @GetMapping("/athlete/{athleteId}/markers")
+    public ResponseEntity<List<Marker>> getAthleteMarkers(
+            @PathVariable Long athleteId) {
+
+        return ResponseEntity.ok(
+                analysisService.getMarkersForAthlete(
                         athleteId
                 )
         );
